@@ -1,0 +1,13 @@
+[package]
+name = "simple-pagerank"
+version = "0.1.0"
+authors = ["Cesar Rodas <cesar@rodasm.com.py>"]
+edition = "2018"
+license = "MIT"
+description = "Simple library to calculate the PageRank of a graph"
+repository = "https://github.com/crodas/pagerank-rs"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
