@@ -163,12 +163,12 @@ where
 
         let mut current_iteration = self.nodes.clone();
 
-        let mut cur = 0;
         let nodes = &self.nodes;
 
         self.nodes
             .iter()
-            .map(|n: &Node<T>| {
+            .enumerate()
+            .map(|(id, n)| {
                 let score = n
                     .incoming_edges
                     .iter()
@@ -178,21 +178,17 @@ where
                     })
                     .sum::<f64>();
 
-                current_iteration[cur].score =
+                current_iteration[id].score =
                     self.damping.0 + (1f64 - self.damping.0) * score;
-
-                cur += 1;
             })
             .for_each(drop);
-
-        cur = 0;
 
         let convergence: f64 = self
             .nodes
             .iter()
-            .map(|n: &Node<T>| {
-                let diff = n.score - current_iteration[cur].score;
-                cur += 1;
+            .enumerate()
+            .map(|(id, n)| {
+                let diff = n.score - current_iteration[id].score;
                 diff * diff
             })
             .sum();
