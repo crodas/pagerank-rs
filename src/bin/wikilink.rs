@@ -24,7 +24,7 @@ fn main() -> io::Result<()> {
         }
 
         if i > 0 {
-            pr.add_link(words[1].clone(), words[3].clone());
+            pr.add_edge(words[1].clone(), words[3].clone());
         }
     }
 
@@ -36,7 +36,7 @@ fn main() -> io::Result<()> {
 
     loop {
         let t = Instant::now();
-        let iter = pr.iterate();
+        let iter = pr.calculate_step();
         times += 1;
         println!(
             "Iteration {} with convergance {} ({} secs)",

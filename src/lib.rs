@@ -15,13 +15,16 @@ impl Damping {
 }
 
 #[derive(Clone)]
+struct Edge(usize, usize);
+
+#[derive(Clone)]
 pub struct Node<T>
 where
     T: Eq + Hash + Clone,
 {
     id: T,
     /// List of links (the ids which are edges in `nodes`)
-    incoming_edges: Vec<usize>,
+    incoming_edges: Vec<Edge>,
     /// Number of out links
     outgoing_edges: usize,
     score: f64,
@@ -75,21 +78,28 @@ where
         Ok(())
     }
 
-    pub fn add_link(&mut self, source: T, target: T) {
+    /// Adds an edge between two nodes
+    pub fn add_edge(&mut self, source: T, target: T) {
         let source = self.get_node_id(source);
         let target = self.get_node_id(target);
+        self._add_edge(Edge(source, target))
+    }
 
-        self.nodes[source].outgoing_edges += 1;
-        self.nodes[target].incoming_edges.push(source);
+    /// Private function to add an edge
+    fn _add_edge(&mut self, edge: Edge) {
+        self.nodes[edge.0].outgoing_edges += 1;
+        self.nodes[edge.1].incoming_edges.push(edge);
         self.edges += 1;
     }
 
+    /// Returns a copy of a node
     pub fn get_node(&mut self, name: T) -> Node<T> {
         let id = self.get_node_id(name);
 
         self.nodes[id].clone()
     }
 
+    /// Returns the node_id for a given node name
     pub fn get_node_id(&mut self, name: T) -> usize {
         match self.nodes_ids.get(&name) {
             Some(&value) => value,
@@ -111,6 +121,7 @@ where
         }
     }
 
+    /// Calculates PageRank with custom convergence
     pub fn calculate_with_convergence(
         &mut self,
         convergence: f64,
@@ -118,7 +129,7 @@ where
         let mut iterations = 0;
 
         loop {
-            if self.iterate() < convergence {
+            if self.calculate_step() < convergence {
                 break;
             }
             iterations += 1;
@@ -127,10 +138,12 @@ where
         iterations
     }
 
+    /// Calculates pagerank with custom convergence
     pub fn calculate(&mut self) -> i32 {
         self.calculate_with_convergence(0.01)
     }
 
+    /// Return all nodes, sorted by their pagerank
     pub fn nodes(&self) -> Vec<Node<T>> {
         let mut nodes = self.nodes.clone();
 
@@ -139,26 +152,8 @@ where
         nodes
     }
 
-    /// Iterates through every single node sorted by their pagerank.
-    pub fn map(&self, each: fn(&T, f64)) -> &Pagerank<T> {
-        let mut id = 0;
-
-        let mut nodes = self.nodes.clone();
-
-        nodes.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-
-        nodes
-            .iter()
-            .map(|n: &Node<T>| {
-                each(&n.id, n.score);
-                id += 1;
-            })
-            .for_each(drop);
-
-        self
-    }
-
-    pub fn iterate(&mut self) -> f64 {
+    /// Calculates a single iteration of the PageRank
+    pub fn calculate_step(&mut self) -> f64 {
         self.is_calculating = true;
 
         let mut current_iteration = self.nodes.clone();
@@ -172,9 +167,9 @@ where
                 let score = n
                     .incoming_edges
                     .iter()
-                    .map(|id: &usize| {
-                        nodes[*id].score
-                            / nodes[*id].outgoing_edges as f64
+                    .map(|edge| {
+                        nodes[edge.0].score
+                            / nodes[edge.1].outgoing_edges as f64
                     })
                     .sum::<f64>();
 
@@ -198,6 +193,7 @@ where
         convergence.sqrt() / self.len_with_incoming_edges() as f64
     }
 
+    /// Len of all edges
     pub fn len_with_incoming_edges(&mut self) -> usize {
         if let Some(n) = self.nodes_with_inconming_edges {
             return n;
@@ -210,7 +206,7 @@ where
             .sum();
 
         if self.is_calculating {
-            // it is save to remember the total
+            // it is calculating, save to remember the total
             self.nodes_with_inconming_edges = Some(total);
         }
 
@@ -248,14 +244,14 @@ mod tests {
     #[test]
     fn test_two_nodes_are_created() {
         let mut pr = Pagerank::<&str>::new();
-        pr.add_link("foo", "bar");
+        pr.add_edge("foo", "bar");
         assert_eq!(2, pr.len())
     }
 
     #[test]
     fn test_links() {
         let mut pr = Pagerank::<&str>::new();
-        pr.add_link("foo", "bar");
+        pr.add_edge("foo", "bar");
         assert_eq!(0, pr.get_node_id("foo"));
         assert_eq!(1, pr.get_node_id("bar"));
 
@@ -271,10 +267,10 @@ mod tests {
     #[test]
     fn test_default_score() {
         let mut pr = Pagerank::<&str>::new();
-        pr.add_link("foo", "bar");
-        pr.add_link("bar", "foo");
-        pr.add_link("xxx", "bar");
-        pr.add_link("yyy", "xxx");
+        pr.add_edge("foo", "bar");
+        pr.add_edge("bar", "foo");
+        pr.add_edge("xxx", "bar");
+        pr.add_edge("yyy", "xxx");
 
         assert_eq!(0.15, pr.get_node("foo").score);
         assert_eq!(0.15, pr.get_node("bar").score);
@@ -285,12 +281,12 @@ mod tests {
     #[test]
     fn test_iteration() {
         let mut pr = Pagerank::<&str>::new();
-        pr.add_link("foo", "bar");
-        pr.add_link("bar", "foo");
-        pr.add_link("xxx", "bar");
-        pr.add_link("yyy", "xxx");
+        pr.add_edge("foo", "bar");
+        pr.add_edge("bar", "foo");
+        pr.add_edge("xxx", "bar");
+        pr.add_edge("yyy", "xxx");
 
-        pr.iterate();
+        pr.calculate_step();
 
         assert_eq!(0.27749999999999997, pr.get_node("foo").score);
         assert_eq!(0.405, pr.get_node("bar").score);
@@ -301,13 +297,13 @@ mod tests {
     #[test]
     fn test_iterations() {
         let mut pr = Pagerank::<&str>::new();
-        pr.add_link("foo", "bar");
-        pr.add_link("bar", "foo");
-        pr.add_link("xxx", "bar");
-        pr.add_link("yyy", "xxx");
+        pr.add_edge("foo", "bar");
+        pr.add_edge("bar", "foo");
+        pr.add_edge("xxx", "bar");
+        pr.add_edge("yyy", "xxx");
 
-        assert_eq!(true, pr.iterate() > pr.iterate());
-        pr.iterate();
+        assert_eq!(true, pr.calculate_step() > pr.calculate_step());
+        pr.calculate_step();
 
         assert_eq!(0.6784874999999999, pr.get_node("foo").score);
         assert_eq!(0.8059875, pr.get_node("bar").score);
@@ -318,10 +314,10 @@ mod tests {
     #[test]
     fn test_full_run() {
         let mut pr = Pagerank::<&str>::new();
-        pr.add_link("foo", "bar");
-        pr.add_link("bar", "foo");
-        pr.add_link("xxx", "bar");
-        pr.add_link("yyy", "xxx");
+        pr.add_edge("foo", "bar");
+        pr.add_edge("bar", "foo");
+        pr.add_edge("xxx", "bar");
+        pr.add_edge("yyy", "xxx");
 
         assert_eq!(16, pr.calculate());
 

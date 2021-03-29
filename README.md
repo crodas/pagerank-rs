@@ -12,8 +12,8 @@ Very simple implementation of the [PageRank](http://ilpubs.stanford.edu:8090/422
 
 ```rust
 let mut pr = Pagerank::<&str>::new();
-pr.add_link("source", "target");
-pr.add_link("source", "another target");
+pr.add_edge("source", "target");
+pr.add_edge("source", "another target");
 pr.calculate();
 
 // print result (always sorted)
