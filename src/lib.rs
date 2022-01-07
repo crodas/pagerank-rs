@@ -1,121 +1,122 @@
+//! # Simple Pagerank
+//!
+//! Pretty simple generic implementation of the PageRank graph sorting algorithm.
+#![deny(missing_docs)]
+#![allow(warnings)]
 use std::collections::HashMap;
 use std::default::Default;
 use std::hash::Hash;
 
-struct Damping(f64);
-
-impl Damping {
-    pub fn new(val: u8) -> Result<Damping, String> {
-        if val >= 100 {
-            return Err("{val} needs to be bellow 100".to_string());
-        }
-
-        Ok(Damping(val as f64 / 100_f64))
-    }
-}
-
 #[derive(Clone)]
-struct Edge(usize, usize);
-
-#[derive(Clone)]
-pub struct Node<T>
+struct Node<T>
 where
     T: Eq + Hash + Clone,
 {
-    id: T,
-    /// List of links (the ids which are edges in `nodes`)
-    incoming_edges: Vec<Edge>,
-    /// Number of out links
-    outgoing_edges: usize,
+    /// Edge type
+    node: T,
+    /// List of edges (the ids which are edges in `nodes`)
+    in_edges: Vec<usize>,
+    /// Number of out edges
+    out_edges: usize,
     score: f64,
 }
 
-impl<T> Node<T>
-where
-    T: Eq + Hash + Clone,
-{
-    pub fn id(&self) -> &T {
-        &self.id
-    }
-
-    pub fn score(&self) -> f64 {
-        self.score
-    }
-}
-
+/// PageRank structure.
+///
 pub struct Pagerank<T>
 where
     T: Eq + Hash + Clone,
 {
-    damping: Damping,
+    /// Damping factor
+    ///
+    /// The PageRank theory holds that an imaginary surfer who is randomly clicking on edges will
+    /// eventually stop clicking. The probability, at any step, that the person will continue is a
+    /// damping factor d. Various studies have tested different damping factors, but it is generally
+    /// assumed that the damping factor will be set around 0.85.
+    damping: f64,
+    /// List of nodes. Each node is uniquely identified by their type T.
     nodes: Vec<Node<T>>,
+    /// Total number of elements
     edges: usize,
-    nodes_ids: HashMap<T, usize>,
-    nodes_with_inconming_edges: Option<usize>,
-    is_calculating: bool,
+    /// Keeps track of nodes and their position in the nodes vector.
+    node_positions: HashMap<T, usize>,
+    /// Cache to keep the count of total nodes with incoming edges. This cache gets reset everytime
+    /// a new node is being added to the graph.
+    nodes_with_in_edges: Option<usize>,
 }
 
 impl<T> Pagerank<T>
 where
     T: Eq + Hash + Clone,
 {
+    /// Creates a new instance
     pub fn new() -> Pagerank<T> {
         Pagerank::<T> {
-            damping: Damping::new(15).unwrap(),
+            damping: 0.85,
             nodes: Vec::new(),
             edges: 0,
-            nodes_ids: HashMap::<T, usize>::new(),
-            nodes_with_inconming_edges: None,
-            is_calculating: false,
+            node_positions: HashMap::<T, usize>::new(),
+            nodes_with_in_edges: None,
         }
     }
 
+    /// Sets the dumping factor. A value between 0 and 100 is expected.
     pub fn set_damping_factor(
         &mut self,
         factor: u8,
     ) -> Result<(), String> {
-        self.damping = Damping::new(factor)?;
+        if factor >= 100 {
+            return Err("{val} needs to be bellow 100".to_string());
+        }
+
+        self.damping = factor as f64 / 100_f64;
         Ok(())
     }
 
-    /// Adds an edge between two nodes
+    /// Adds an node between two nodes
     pub fn add_edge(&mut self, source: T, target: T) {
-        let source = self.get_node_id(source);
-        let target = self.get_node_id(target);
-        self._add_edge(Edge(source, target))
-    }
-
-    /// Private function to add an edge
-    fn _add_edge(&mut self, edge: Edge) {
-        self.nodes[edge.0].outgoing_edges += 1;
-        self.nodes[edge.1].incoming_edges.push(edge);
+        let source = self.get_or_create_node(source);
+        let target = self.get_or_create_node(target);
+        self.nodes[source].out_edges += 1;
+        self.nodes[target].in_edges.push(source);
         self.edges += 1;
     }
 
-    /// Returns a copy of a node
-    pub fn get_node(&mut self, name: T) -> Node<T> {
-        let id = self.get_node_id(name);
+    /// Returns the current score of a gien node
+    pub fn get_score(&self, node: T) -> Option<f64> {
+        self.node_positions
+            .get(&node)
+            .map(|id| self.nodes[*id].score)
+    }
 
-        self.nodes[id].clone()
+    /// Returns the number of in edges for the given node
+    pub fn get_in_edges(&self, node: T) -> Option<usize> {
+        self.node_positions
+            .get(&node)
+            .map(|id| self.nodes[*id].in_edges.len())
+    }
+
+    /// Returns the number of out edges for the given node
+    pub fn get_out_edges(&self, node: T) -> Option<usize> {
+        self.node_positions
+            .get(&node)
+            .map(|id| self.nodes[*id].out_edges)
     }
 
     /// Returns the node_id for a given node name
-    pub fn get_node_id(&mut self, name: T) -> usize {
-        match self.nodes_ids.get(&name) {
+    pub fn get_or_create_node(&mut self, node: T) -> usize {
+        match self.node_positions.get(&node) {
             Some(&value) => value,
             _ => {
-                let node = Node::<T> {
-                    id: name.clone(),
-                    incoming_edges: Vec::new(),
-                    outgoing_edges: 0,
-                    score: 0.15,
-                };
-
-                self.nodes.push(node);
-                let id = self.nodes.len() - 1;
-
-                self.nodes_ids.insert(name, id);
-
+                let id = self.nodes.len();
+                self.nodes.push(Node::<T> {
+                    node: node.clone(),
+                    in_edges: Vec::new(),
+                    out_edges: 0,
+                    score: 1f64 - self.damping,
+                });
+                self.node_positions.insert(node, id);
+                self.nodes_with_in_edges = None;
                 id
             }
         }
@@ -144,18 +145,20 @@ where
     }
 
     /// Return all nodes, sorted by their pagerank
-    pub fn nodes(&self) -> Vec<Node<T>> {
-        let mut nodes = self.nodes.clone();
+    pub fn nodes(&self) -> Vec<(&T, f64)> {
+        let mut nodes = self
+            .nodes
+            .iter()
+            .map(|node| (&node.node, node.score))
+            .collect::<Vec<(&T, f64)>>();
 
-        nodes.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        nodes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
         nodes
     }
 
     /// Calculates a single iteration of the PageRank
     pub fn calculate_step(&mut self) -> f64 {
-        self.is_calculating = true;
-
         let mut current_iteration = self.nodes.clone();
 
         let nodes = &self.nodes;
@@ -165,16 +168,16 @@ where
             .enumerate()
             .map(|(id, n)| {
                 let score = n
-                    .incoming_edges
+                    .in_edges
                     .iter()
-                    .map(|edge| {
-                        nodes[edge.0].score
-                            / nodes[edge.1].outgoing_edges as f64
+                    .map(|node| {
+                        nodes[*node].score
+                            / nodes[*node].out_edges as f64
                     })
                     .sum::<f64>();
 
                 current_iteration[id].score =
-                    self.damping.0 + (1f64 - self.damping.0) * score;
+                    (1f64 - self.damping) + (self.damping * score);
             })
             .for_each(drop);
 
@@ -190,25 +193,24 @@ where
 
         self.nodes = current_iteration;
 
-        convergence.sqrt() / self.len_with_incoming_edges() as f64
+        convergence.sqrt() / self.len_nodes_with_in_edges() as f64
     }
 
     /// Len of all edges
-    pub fn len_with_incoming_edges(&mut self) -> usize {
-        if let Some(n) = self.nodes_with_inconming_edges {
+    pub fn len_nodes_with_in_edges(&mut self) -> usize {
+        if let Some(n) = self.nodes_with_in_edges {
             return n;
         }
 
-        let total: usize = self
-            .nodes
-            .iter()
-            .map(|r| if r.incoming_edges.is_empty() { 0 } else { 1 })
-            .sum();
+        let mut total = 0;
 
-        if self.is_calculating {
-            // it is calculating, save to remember the total
-            self.nodes_with_inconming_edges = Some(total);
+        for node in self.nodes.iter() {
+            if node.in_edges.len() > 0 {
+                total += 1;
+            }
         }
+
+        self.nodes_with_in_edges = Some(total);
 
         total
     }
@@ -219,10 +221,11 @@ where
     }
 
     /// Returns the number of edges in the current graph
-    pub fn len_edge(&self) -> usize {
+    pub fn len_node(&self) -> usize {
         self.edges
     }
 
+    /// If the graph is empty
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
@@ -249,19 +252,16 @@ mod tests {
     }
 
     #[test]
-    fn test_links() {
+    fn test_edges() {
         let mut pr = Pagerank::<&str>::new();
         pr.add_edge("foo", "bar");
-        assert_eq!(0, pr.get_node_id("foo"));
-        assert_eq!(1, pr.get_node_id("bar"));
+        assert_eq!(0, pr.get_or_create_node("foo"));
+        assert_eq!(1, pr.get_or_create_node("bar"));
 
-        let n1 = pr.get_node("foo");
-        let n2 = pr.get_node("bar");
-
-        assert_eq!(0, n1.incoming_edges.len());
-        assert_eq!(1, n1.outgoing_edges);
-        assert_eq!(1, n2.incoming_edges.len());
-        assert_eq!(0, n2.outgoing_edges);
+        assert_eq!(Some(0), pr.get_in_edges("foo"));
+        assert_eq!(Some(1), pr.get_out_edges("foo"));
+        assert_eq!(Some(1), pr.get_in_edges("bar"));
+        assert_eq!(Some(0), pr.get_out_edges("bar"));
     }
 
     #[test]
@@ -272,10 +272,13 @@ mod tests {
         pr.add_edge("xxx", "bar");
         pr.add_edge("yyy", "xxx");
 
-        assert_eq!(0.15, pr.get_node("foo").score);
-        assert_eq!(0.15, pr.get_node("bar").score);
-        assert_eq!(0.15, pr.get_node("xxx").score);
-        assert_eq!(0.15, pr.get_node("yyy").score);
+        assert_eq!(
+            15_i64,
+            (pr.get_score("foo").expect("float") * 100_f64) as i64
+        );
+        assert_eq!(pr.get_score("foo"), pr.get_score("bar"));
+        assert_eq!(pr.get_score("foo"), pr.get_score("xxx"));
+        assert_eq!(pr.get_score("foo"), pr.get_score("yyy"));
     }
 
     #[test]
@@ -288,10 +291,13 @@ mod tests {
 
         pr.calculate_step();
 
-        assert_eq!(0.27749999999999997, pr.get_node("foo").score);
-        assert_eq!(0.405, pr.get_node("bar").score);
-        assert_eq!(0.27749999999999997, pr.get_node("xxx").score);
-        assert_eq!(0.15, pr.get_node("yyy").score);
+        assert_eq!(
+            vec!["bar", "foo", "xxx", "yyy"],
+            pr.nodes()
+                .iter()
+                .map(|(node, _)| **node)
+                .collect::<Vec<&str>>()
+        );
     }
 
     #[test]
@@ -305,10 +311,13 @@ mod tests {
         assert_eq!(true, pr.calculate_step() > pr.calculate_step());
         pr.calculate_step();
 
-        assert_eq!(0.6784874999999999, pr.get_node("foo").score);
-        assert_eq!(0.8059875, pr.get_node("bar").score);
-        assert_eq!(0.27749999999999997, pr.get_node("xxx").score);
-        assert_eq!(0.15, pr.get_node("yyy").score);
+        assert_eq!(
+            vec!["bar", "foo", "xxx", "yyy"],
+            pr.nodes()
+                .iter()
+                .map(|(node, _)| **node)
+                .collect::<Vec<&str>>()
+        );
     }
 
     #[test]
@@ -321,9 +330,53 @@ mod tests {
 
         assert_eq!(16, pr.calculate());
 
-        assert_eq!(1.6152071803888868, pr.get_node("foo").score);
-        assert_eq!(1.7427071803888865, pr.get_node("bar").score);
-        assert_eq!(0.27749999999999997, pr.get_node("xxx").score);
-        assert_eq!(0.15, pr.get_node("yyy").score);
+        assert_eq!(
+            vec!["bar", "foo", "xxx", "yyy"],
+            pr.nodes()
+                .iter()
+                .map(|(node, _)| **node)
+                .collect::<Vec<&str>>()
+        );
+    }
+
+    #[test]
+    /// https://en.wikipedia.org/wiki/PageRank#/media/File:PageRanks-Example.svg
+    fn test_pagerank_example() {
+        let mut pr = Pagerank::new();
+        let edges = vec![
+            ("D", "A"),
+            ("D", "B"),
+            ("B", "C"),
+            ("C", "B"),
+            ("E", "B"),
+            ("E", "F"),
+            ("F", "B"),
+            ("F", "E"),
+            ("G", "B"),
+            ("G", "E"),
+            ("H", "B"),
+            ("H", "E"),
+            ("I", "B"),
+            ("I", "E"),
+            ("J", "E"),
+            ("K", "E"),
+        ];
+
+        edges
+            .iter()
+            .map(|(l1, l2)| pr.add_edge(*l1, *l2))
+            .for_each(drop);
+
+        pr.calculate();
+
+        assert_eq!(
+            vec![
+                "B", "C", "E", "F", "A", "D", "G", "H", "I", "J", "K"
+            ],
+            pr.nodes()
+                .iter()
+                .map(|(node, _)| **node)
+                .collect::<Vec<&str>>()
+        );
     }
 }

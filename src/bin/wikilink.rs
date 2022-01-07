@@ -44,14 +44,14 @@ fn main() -> io::Result<()> {
             iter,
             t.elapsed().as_secs()
         );
-        if iter < 0.001 {
+        if iter < 0.001 && times > 50 {
             break;
         }
     }
 
     pr.nodes()
         .iter()
-        .map(|node| println!("{} -> {}", node.id(), node.score()))
+        .map(|(node, score)| println!("{} -> {}", node, score))
         .for_each(drop);
 
     Ok(())
