@@ -5,6 +5,7 @@ Very simple implementation of the [PageRank](http://ilpubs.stanford.edu:8090/422
 ### Features
 
 - Small footprint
+- Zero dependency
 - Easy to use API
 - Fast
 `
@@ -20,7 +21,7 @@ pr.calculate();
 
 pr.nodes()
 	.iter()
-	.map(|node| println!("page {} with score {}", node.id(), node.score()))
+	.map(|(node, score)| println!("page {} with score {}", node, score))
 	.for_each(drop);
 ```
 
